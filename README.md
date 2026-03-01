@@ -3,8 +3,8 @@
 > **5-card draw poker where no one — not even the server — ever sees your cards.**
 > Cards are encrypted with Baby Jubjub El Gamal. Decryption is proven with Groth16 ZK proofs verified on-chain by a Garaga verifier. Every shuffle, every reveal, every pot settlement is trustless and auditable on Starknet.
 
-[![Live Demo](https://img.shields.io/badge/live-frontend--nagavaishak--belay.vercel.app-green)](https://frontend-nagavaishak-belay.vercel.app)
-[![Demo Mode](https://img.shields.io/badge/demo-no%20wallet%20required-yellow)](https://frontend-nagavaishak-belay.vercel.app/demo)
+[![Live Demo](https://img.shields.io/badge/live-starkpoker.vercel.app-green)](https://starkpoker.vercel.app)
+[![Demo Mode](https://img.shields.io/badge/demo-no%20wallet%20required-yellow)](https://starkpoker.vercel.app/demo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---
@@ -331,7 +331,7 @@ The `/demo` page runs a complete trustless poker game in your browser — no wal
 starknet-devnet --seed 42 --port 5050
 ```
 
-Then visit: `http://localhost:3000/demo` (or the [live Vercel deployment](https://frontend-nagavaishak-belay.vercel.app/demo)).
+Then visit: `http://localhost:3000/demo` (or the [live Vercel deployment](https://starkpoker.vercel.app/demo)).
 
 ### What the demo does (step by step)
 
