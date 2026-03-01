@@ -1,0 +1,8 @@
+{
+  "network": "starknet-sepolia",
+  "contracts": {
+    "PokerGame": "TBD",
+    "PartialDecryptVerifier": "TBD",
+    "PotManager": "TBD"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "name": "zk-shuffle-starknet",
+  "version": "0.1.0",
+  "description": "ZK shuffle utilities for Starknet — deck encoding, shuffle, rerandomization using Baby Jubjub El Gamal.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": ["starknet", "babyjubjub", "mental-poker", "zk-shuffle", "cairo"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "babyjubjub-starknet": "^0.1.0",
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "@types/jest": "^29.0.0"
+  }
+}

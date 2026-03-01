@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+*.zkey
+*.ptau
+*.wtns
+*.wasm
+target/
+.snfoundry_cache/
+__pycache__/
+.env
+.DS_Store

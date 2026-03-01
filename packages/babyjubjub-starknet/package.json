@@ -1,0 +1,26 @@
+{
+  "name": "babyjubjub-starknet",
+  "version": "0.1.0",
+  "description": "Baby Jubjub El Gamal encryption for Starknet. The serialization primitive for Baby Jubjub ↔ Circom ↔ Cairo.",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "keywords": ["starknet", "babyjubjub", "elgamal", "zk", "cairo", "circom"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "circomlibjs": "^0.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "@types/jest": "^29.0.0"
+  }
+}
