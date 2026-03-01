@@ -1,12 +1,33 @@
+# Dependencies
 node_modules/
+.npm/
+
+# Build outputs
+.next/
 dist/
 build/
-*.zkey
-*.ptau
-*.wtns
-*.wasm
 target/
-.snfoundry_cache/
-__pycache__/
+
+# Env files
 .env
+.env.local
+.env*.local
+
+# Vercel
+.vercel/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Scarb / Cairo
+packages/*/pkg/
+contracts/target/
+
+# Proof artifacts (large)
+circuits/*/partial_decrypt_js/
+circuits/*/ptau/
+
+# Editor
+.idea/
+*.swp
