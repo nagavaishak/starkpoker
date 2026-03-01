@@ -1,0 +1,27 @@
+{
+  "name": "starkpoker-sdk",
+  "version": "0.1.0",
+  "description": "StarkPoker SDK — game orchestration using babyjubjub-starknet",
+  "private": true,
+  "type": "module",
+  "main": "./dist/src/starknet.js",
+  "exports": {
+    ".": "./dist/src/starknet.js",
+    "./src/starknet.js": "./dist/src/starknet.js",
+    "./src/game.js": "./dist/src/game.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "e2e": "npx tsx scripts/e2e-test.ts",
+    "integration": "npx tsx scripts/e2e-integration.ts"
+  },
+  "dependencies": {
+    "babyjubjub-starknet": "file:../packages/babyjubjub-starknet",
+    "starknet": "^9.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "tsx": "^4.0.0"
+  }
+}
