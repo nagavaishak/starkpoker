@@ -19,3 +19,16 @@ export {
 } from "./elgamal";
 
 export { encodeDeck, shuffleDeck, rerandomizeDeck } from "./deck";
+
+export type { PartialDecryptProofInput, Groth16Proof } from "./proof";
+export { buildProofInput, generatePartialDecryptProof, verifyPartialDecryptProof } from "./proof";
+
+export {
+  pointToFelt252,
+  pointFromFelt252,
+  maskedCardToCalldata,
+  pdToCalldata,
+  garigaProofToCalldata,
+  fpToU384,
+  u384ToFp,
+} from "./calldata";
