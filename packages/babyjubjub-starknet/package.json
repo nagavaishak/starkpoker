@@ -4,6 +4,14 @@
   "description": "Baby Jubjub El Gamal encryption for Starknet. The serialization primitive for Baby Jubjub ↔ Circom ↔ Cairo.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./browser": "./dist/browser.js",
+    "./dist/babyJub.js": "./dist/babyJub.js",
+    "./dist/keypair.js": "./dist/keypair.js",
+    "./dist/elgamal.js": "./dist/elgamal.js",
+    "./dist/deck.js": "./dist/deck.js"
+  },
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
