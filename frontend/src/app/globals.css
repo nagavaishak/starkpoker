@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+:root {
+  --felt: #35654d;
+  --felt-dark: #1a3c2a;
+  --gold: #d4af37;
+}
+
+body {
+  background: #0f1f15;
+  color: #f0ede8;
+  font-family: 'Georgia', serif;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.proof-spinner {
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes flip {
+  0%   { transform: rotateY(0deg); }
+  50%  { transform: rotateY(90deg); }
+  100% { transform: rotateY(0deg); }
+}
+.card-flip {
+  animation: flip 0.6s ease-in-out;
+}
