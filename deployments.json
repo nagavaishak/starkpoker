@@ -1,8 +1,17 @@
 {
-  "network": "starknet-sepolia",
-  "contracts": {
-    "PokerGame": "TBD",
-    "PartialDecryptVerifier": "TBD",
-    "PotManager": "TBD"
+  "sepolia": {
+    "network": "starknet-sepolia",
+    "pokerGame": "0x0006005f4adc7ceffeb86779ceedc89855ee5cb24f3841fa3dfe6a8d66059208",
+    "strkToken": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    "classHash": "0x411eb0d3b65e83385097d35ce178763693458885a1ed306721692ee5ab119b7",
+    "deployTx": "0x006cb4bb9d292b9e94ec3c8426fa9f52b0bb7d31e3812b37a74e3898a3107c95",
+    "declareTx": "0x4aecc4bdbc80b64e91a4a101e3bf51c72f13ff3e0f4c2ce24e342a0c8e7290b",
+    "deployer": "0x019741df453b1656ae26299c0b54cc49f23d4d15003df057833b2d862ed0abd6"
+  },
+  "devnet": {
+    "network": "starknet-devnet-seed42",
+    "pokerGame": "0x030d148d9cf1445f476eb2f6e084ff4480f3ccffb98d7ac1fad759c857e5b47c",
+    "strkToken": "0x4718F5A0FC34CC1AF16A1CDEE98FFB20C31F5CD61D6AB07201858F4287C938D",
+    "rpc": "http://localhost:5050"
   }
 }
