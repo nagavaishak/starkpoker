@@ -17,7 +17,7 @@ export function Lobby({ onCreateGame, onJoinGame, gameId, error, isLoading }: Lo
   const { status } = useAccount();
   const connected = status === "connected" || status === "reconnecting";
 
-  const [anteEth, setAnteEth] = useState("1");
+  const [anteEth, setAnteEth] = useState("0.001");
   const [joinId, setJoinId] = useState("");
 
   const handleCreate = async () => {
@@ -68,8 +68,8 @@ export function Lobby({ onCreateGame, onJoinGame, gameId, error, isLoading }: Lo
                 <label className="text-xs text-gray-400 mb-1 block">Buy-in (STRK)</label>
                 <input
                   type="number"
-                  min="0.01"
-                  step="0.1"
+                  min="0.001"
+                  step="0.001"
                   value={anteEth}
                   onChange={(e) => setAnteEth(e.target.value)}
                   className="w-full px-3 py-2 rounded-lg bg-green-900/50 border border-green-700
