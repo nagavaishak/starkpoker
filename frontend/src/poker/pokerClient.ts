@@ -231,11 +231,9 @@ export interface PokerContracts {
   strkAddress: string;
 }
 
-// u256 calldata: [low, high] as 0x-prefixed strings
+// u256 calldata: [low, high] via starknet.js cairo helpers
 function u256Calldata(value: bigint): string[] {
-  const low  = `0x${(value & ((1n << 128n) - 1n)).toString(16)}`;
-  const high = `0x${(value >> 128n).toString(16)}`;
-  return [low, high];
+  return CallData.compile([cairo.uint256(value)]);
 }
 
 export class PokerContractClient {
@@ -322,7 +320,7 @@ export class PokerContractClient {
       {
         contractAddress: this.gameAddress,
         entrypoint: "submit_masked_deck",
-        calldata: [gameId, cardFelts.length.toString(), ...cardFelts],
+        calldata: [gameId, num.toHex(cardFelts.length), ...cardFelts],
       },
     ]);
     await account.waitForTransaction(res.transaction_hash);
@@ -339,7 +337,7 @@ export class PokerContractClient {
       {
         contractAddress: this.gameAddress,
         entrypoint: "submit_shuffle",
-        calldata: [gameId, cardFelts.length.toString(), ...cardFelts],
+        calldata: [gameId, num.toHex(cardFelts.length), ...cardFelts],
       },
     ]);
     await account.waitForTransaction(res.transaction_hash);
@@ -364,7 +362,7 @@ export class PokerContractClient {
           cardIdx.toString(),
           ...u256Calldata(pdX),
           ...u256Calldata(pdY),
-          proofCalldata.length.toString(),
+          num.toHex(proofCalldata.length),
           ...proofCalldata,
         ],
       },
@@ -440,7 +438,7 @@ export class PokerContractClient {
       {
         contractAddress: this.gameAddress,
         entrypoint: "reveal_hand",
-        calldata: [gameId, ...cardIndices.map(String)],
+        calldata: [gameId, ...cardIndices.map(num.toHex)],
       },
     ]);
     await account.waitForTransaction(res.transaction_hash);
