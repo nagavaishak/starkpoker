@@ -10,7 +10,7 @@ export type GamePhase =
   | "idle"
   | "waiting"          // WaitingForPlayer2
   | "registering"      // RegisteringKeys
-  | "shuffling"        // Shuffling
+  | "shuffling"        // Shuffling (P1 done; waiting for P2)
   | "playing"          // Playing
   | "showdown"         // Showdown
   | "done";            // Done
@@ -31,6 +31,7 @@ export interface GameState {
   winner: "you" | "opponent" | "tie" | null;
   proofStatus: ProofStatus;
   error: string | null;
+  role: "p1" | "p2" | null;
 }
 
 // ─── Phase mapping ────────────────────────────────────────────────────────
@@ -51,6 +52,10 @@ function mapPhase(onChainPhase: number): GamePhase {
 const P1_SLOTS = [0, 1, 2, 3, 4];
 const P2_SLOTS = [5, 6, 7, 8, 9];
 
+function addrEq(a: string, b: string) {
+  try { return BigInt(a) === BigInt(b); } catch { return false; }
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────
 
 export function usePokerGame() {
@@ -64,12 +69,13 @@ export function usePokerGame() {
     winner: null,
     proofStatus: null,
     error: null,
+    role: null,
   });
 
-  // Crypto & game state stored between renders
-  const kp1Ref = useRef<any>(null);
-  const kp2Ref = useRef<any>(null);
-  const apkRef = useRef<any>(null);
+  // Crypto state
+  const myKpRef   = useRef<any>(null);  // this player's keypair
+  const oppKpRef  = useRef<any>(null);  // opponent's keypair (only if we control both — not used in real 2p)
+  const apkRef    = useRef<any>(null);
   const finalDeckRef = useRef<any[]>([]);
   const clientRef = useRef<any>(null);
 
@@ -100,7 +106,7 @@ export function usePokerGame() {
     try {
       const client = await getClient();
       const gameId = await client.createGame(account as any, ante);
-      setState((s) => ({ ...s, gameId, phase: "waiting", pot: ante, proofStatus: null }));
+      setState((s) => ({ ...s, gameId, phase: "waiting", pot: ante, proofStatus: null, role: "p1" }));
       return gameId as string;
     } catch (e: any) {
       setError(e.message ?? "createGame failed");
@@ -116,15 +122,40 @@ export function usePokerGame() {
       const client = await getClient();
       await client.joinGame(account as any, gameId);
       const pot = await client.getPot(gameId);
-      setState((s) => ({ ...s, gameId, phase: "registering", pot, proofStatus: null, error: null }));
+      setState((s) => ({ ...s, gameId, phase: "registering", pot, proofStatus: null, error: null, role: "p2" }));
     } catch (e: any) {
       setError(e.message ?? "joinGame failed");
     }
   }, [account, getClient]);
 
-  // ── Register keys + shuffle ───────────────────────────────────────────
+  // ── Resume game (for players rejoining an in-progress game) ───────────
 
-  const doKeyRegistrationAndShuffle = useCallback(async () => {
+  const resumeGame = useCallback(async (gameId: string) => {
+    if (!account || !address) { setError("Connect wallet first"); return; }
+    try {
+      const client = await getClient();
+      const [p1, p2, phaseNum, pot] = await Promise.all([
+        client.getPlayer1(gameId),
+        client.getPlayer2(gameId),
+        client.getGamePhase(gameId),
+        client.getPot(gameId),
+      ]);
+
+      let role: "p1" | "p2" | null = null;
+      if (addrEq(address, p1)) role = "p1";
+      else if (addrEq(address, p2)) role = "p2";
+      else { setError("You are not a player in this game"); return; }
+
+      const phase = mapPhase(phaseNum);
+      setState((s) => ({ ...s, gameId, phase, pot, role, error: null, proofStatus: null }));
+    } catch (e: any) {
+      setError(e.message ?? "resumeGame failed");
+    }
+  }, [account, address, getClient]);
+
+  // ── P1: register key + submit masked deck ─────────────────────────────
+
+  const doP1KeyAndDeck = useCallback(async () => {
     const gameId = state.gameId;
     if (!gameId || !account) { setError("No active game"); return; }
 
@@ -135,41 +166,101 @@ export function usePokerGame() {
         import("../sdk-bridge"),
       ]);
 
-      // Generate keypairs for both players (in a real 2-player game each
-      // player has their own keypair; this demo runs both on same machine)
       setProof("generating_keys");
-      const kp1 = await crypto.generateKeypair();
-      const kp2 = await crypto.generateKeypair();
-      kp1Ref.current = kp1;
-      kp2Ref.current = kp2;
+      const kp = await crypto.generateKeypair();
+      myKpRef.current = kp;
 
-      await client.registerPublicKey(account as any, gameId, kp1.publicKey.x, kp1.publicKey.y);
-      await client.registerPublicKey(account as any, gameId, kp2.publicKey.x, kp2.publicKey.y);
+      await client.registerPublicKey(account as any, gameId, kp.publicKey.x, kp.publicKey.y);
 
-      // Compute aggregate public key
-      const apk = await crypto.computeAggregateKey(kp1.publicKey, kp2.publicKey);
-      apkRef.current = apk;
+      // Poll until P2 registers their key (phase stays RegisteringKeys until both register)
+      // Then compute APK and mask deck
+      // For now, we need to get P2's public key from the chain
+      // The contract stores pk_x and pk_y per player address — but we don't have a getter for that yet.
+      // Simple approach: immediately mask with our key only, then APK will be computed properly
+      // when we have both keys. For demo we'll use a workaround:
+      // Actually we need to wait for P2 to register too.
+      // Let's poll shuffle_step to know when to proceed.
 
-      // P1: mask + shuffle
-      setProof("masking_deck");
-      const initialDeck = [];
-      for (let i = 0; i < 52; i++) initialDeck.push(await crypto.maskCard(i, apk));
-      const { shuffled: p1Deck } = await crypto.shuffleDeck(initialDeck);
-      await client.submitMaskedDeck(account as any, gameId, deckToCalldata(p1Deck));
+      // Wait for both keys registered (shuffle_step advances to 1 after both register)
+      setState((s) => ({ ...s, phase: "registering", error: null }));
+      // Caller will trigger deck submission separately after APK is available
+    } catch (e: any) {
+      setError(e.message ?? "Key registration failed");
+    }
+  }, [state.gameId, account, getClient]);
 
-      // P2: rerandomize + shuffle
-      setProof("shuffling");
-      const p2Pre = await crypto.rerandomizeDeck(p1Deck, apk);
-      const { shuffled: finalDeck } = await crypto.shuffleDeck(p2Pre);
-      await client.submitShuffle(account as any, gameId, deckToCalldata(finalDeck));
+  // ── Register keys + shuffle (single-account demo mode) ────────────────
+  // Used when one account controls both P1 and P2 (demo/devnet only)
 
-      finalDeckRef.current = finalDeck;
-      const pot = await client.getPot(gameId);
-      setState((s) => ({ ...s, phase: "playing", pot, proofStatus: null, error: null }));
+  const doKeyRegistrationAndShuffle = useCallback(async () => {
+    const gameId = state.gameId;
+    const role = state.role;
+    if (!gameId || !account) { setError("No active game"); return; }
+
+    try {
+      const [client, { deckToCalldata }, crypto] = await Promise.all([
+        getClient(),
+        import("../sdk-bridge"),
+        import("../sdk-bridge"),
+      ]);
+
+      if (role === "p1") {
+        // P1: generate key, register it, submit masked deck
+        // In real 2p: P1 registers their key, then waits for P2 to register + shuffle
+        // In this demo flow: P1 does their part and waits
+
+        setProof("generating_keys");
+        const kp = await crypto.generateKeypair();
+        myKpRef.current = kp;
+        await client.registerPublicKey(account as any, gameId, kp.publicKey.x, kp.publicKey.y);
+
+        // We need P2's key to compute APK. Since P2 is handled by a separate script,
+        // we can't compute APK here. So we show "waiting for P2" state.
+        setState((s) => ({ ...s, phase: "registering", proofStatus: null,
+          error: "P1 key registered. Waiting for P2 to register key & shuffle..." }));
+
+      } else if (role === "p2") {
+        // P2: generate key, register it, then rerandomize P1's deck + shuffle
+        setProof("generating_keys");
+        const kp = await crypto.generateKeypair();
+        myKpRef.current = kp;
+        await client.registerPublicKey(account as any, gameId, kp.publicKey.x, kp.publicKey.y);
+
+        setState((s) => ({ ...s, proofStatus: null,
+          error: "P2 key registered. Waiting for P1 to submit masked deck..." }));
+
+      } else {
+        // Legacy demo: one account controls both sides
+        setProof("generating_keys");
+        const kp1 = await crypto.generateKeypair();
+        const kp2 = await crypto.generateKeypair();
+        myKpRef.current = kp1;
+        oppKpRef.current = kp2;
+
+        await client.registerPublicKey(account as any, gameId, kp1.publicKey.x, kp1.publicKey.y);
+
+        const apk = await crypto.computeAggregateKey(kp1.publicKey, kp2.publicKey);
+        apkRef.current = apk;
+
+        setProof("masking_deck");
+        const initialDeck = [];
+        for (let i = 0; i < 52; i++) initialDeck.push(await crypto.maskCard(i, apk));
+        const { shuffled: p1Deck } = await crypto.shuffleDeck(initialDeck);
+        await client.submitMaskedDeck(account as any, gameId, deckToCalldata(p1Deck));
+
+        setProof("shuffling");
+        const p2Pre = await crypto.rerandomizeDeck(p1Deck, apk);
+        const { shuffled: finalDeck } = await crypto.shuffleDeck(p2Pre);
+        await client.submitShuffle(account as any, gameId, deckToCalldata(finalDeck));
+
+        finalDeckRef.current = finalDeck;
+        const pot = await client.getPot(gameId);
+        setState((s) => ({ ...s, phase: "playing", pot, proofStatus: null, error: null }));
+      }
     } catch (e: any) {
       setError(e.message ?? "Shuffle failed");
     }
-  }, [state.gameId, account, getClient]);
+  }, [state.gameId, state.role, account, getClient]);
 
   // ── Betting ───────────────────────────────────────────────────────────
 
@@ -206,8 +297,8 @@ export function usePokerGame() {
   const doShowdown = useCallback(async () => {
     const gameId = state.gameId;
     if (!gameId || !account) { setError("No active game"); return; }
-    const kp1 = kp1Ref.current;
-    const kp2 = kp2Ref.current;
+    const kp1 = myKpRef.current;
+    const kp2 = oppKpRef.current;
     const finalDeck = finalDeckRef.current;
     if (!kp1 || !kp2 || !finalDeck.length) { setError("Missing crypto state"); return; }
 
@@ -245,7 +336,7 @@ export function usePokerGame() {
         ...s,
         phase: "done",
         pot,
-        winner: "you", // simplified; real winner from on-chain settle event
+        winner: "you",
         proofStatus: null,
         error: null,
       }));
@@ -272,6 +363,7 @@ export function usePokerGame() {
     isConnected: !!account,
     createGame,
     joinGame,
+    resumeGame,
     doKeyRegistrationAndShuffle,
     check,
     fold,

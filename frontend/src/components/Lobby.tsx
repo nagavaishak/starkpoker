@@ -8,17 +8,19 @@ import { ANTE_DEFAULT } from "@/lib/contracts";
 interface LobbyProps {
   onCreateGame: (ante: bigint) => Promise<string | undefined>;
   onJoinGame: (gameId: string) => Promise<void>;
+  onResumeGame: (gameId: string) => Promise<void>;
   gameId: string | null;
   error: string | null;
   isLoading: boolean;
 }
 
-export function Lobby({ onCreateGame, onJoinGame, gameId, error, isLoading }: LobbyProps) {
+export function Lobby({ onCreateGame, onJoinGame, onResumeGame, gameId, error, isLoading }: LobbyProps) {
   const { status } = useAccount();
   const connected = status === "connected" || status === "reconnecting";
 
   const [anteEth, setAnteEth] = useState("0.001");
   const [joinId, setJoinId] = useState("");
+  const [resumeId, setResumeId] = useState("");
 
   const handleCreate = async () => {
     const anteWei = BigInt(Math.round(parseFloat(anteEth) * 1e18));
@@ -28,6 +30,11 @@ export function Lobby({ onCreateGame, onJoinGame, gameId, error, isLoading }: Lo
   const handleJoin = async () => {
     if (!joinId.trim()) return;
     await onJoinGame(joinId.trim());
+  };
+
+  const handleResume = async () => {
+    if (!resumeId.trim()) return;
+    await onResumeGame(resumeId.trim());
   };
 
   return (
@@ -114,6 +121,26 @@ export function Lobby({ onCreateGame, onJoinGame, gameId, error, isLoading }: Lo
               >
                 {isLoading ? "Joining…" : "Join Game"}
               </button>
+
+              <div className="border-t border-green-800 pt-3 mt-1">
+                <label className="text-xs text-gray-400 mb-1 block">Already a player? Resume:</label>
+                <input
+                  type="text"
+                  placeholder="Game ID (0x0, 1, ...)"
+                  value={resumeId}
+                  onChange={(e) => setResumeId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-green-900/50 border border-green-700
+                    text-white placeholder-gray-500 focus:outline-none focus:border-yellow-400 font-mono text-sm mb-2"
+                />
+                <button
+                  onClick={handleResume}
+                  disabled={isLoading || !resumeId.trim()}
+                  className="w-full py-2 rounded-lg bg-purple-700 hover:bg-purple-600 disabled:opacity-50
+                    text-white font-bold transition-colors"
+                >
+                  {isLoading ? "Loading…" : "Resume Game"}
+                </button>
+              </div>
             </div>
           </div>
         )}

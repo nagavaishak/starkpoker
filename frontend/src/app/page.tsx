@@ -10,6 +10,7 @@ export default function Home() {
     address,
     createGame,
     joinGame,
+    resumeGame,
     doKeyRegistrationAndShuffle,
     check,
     fold,
@@ -25,6 +26,7 @@ export default function Home() {
       <Lobby
         onCreateGame={createGame}
         onJoinGame={joinGame}
+        onResumeGame={resumeGame}
         gameId={state.gameId}
         error={state.error}
         isLoading={isLoading}

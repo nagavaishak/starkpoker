@@ -449,6 +449,24 @@ export class PokerContractClient {
     });
     return Number(result[0]);
   }
+
+  async getPlayer1(gameId: string): Promise<string> {
+    const result = await this.provider.callContract({
+      contractAddress: this.gameAddress,
+      entrypoint: "get_player1",
+      calldata: [gameId],
+    });
+    return result[0];
+  }
+
+  async getPlayer2(gameId: string): Promise<string> {
+    const result = await this.provider.callContract({
+      contractAddress: this.gameAddress,
+      entrypoint: "get_player2",
+      calldata: [gameId],
+    });
+    return result[0];
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
