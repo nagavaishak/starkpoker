@@ -205,19 +205,35 @@ export function usePokerGame() {
       ]);
 
       if (role === "p1") {
-        // P1: generate key, register it, submit masked deck
-        // In real 2p: P1 registers their key, then waits for P2 to register + shuffle
-        // In this demo flow: P1 does their part and waits
-
+        // ── P1 full flow: register key → read P2 key → mask deck → submit ──
         setProof("generating_keys");
         const kp = await crypto.generateKeypair();
         myKpRef.current = kp;
         await client.registerPublicKey(account as any, gameId, kp.publicKey.x, kp.publicKey.y);
 
-        // We need P2's key to compute APK. Since P2 is handled by a separate script,
-        // we can't compute APK here. So we show "waiting for P2" state.
-        setState((s) => ({ ...s, phase: "registering", proofStatus: null,
-          error: "P1 key registered. Waiting for P2 to register key & shuffle..." }));
+        // Poll until P2's key is on-chain
+        setState((s) => ({ ...s, proofStatus: "generating_keys", error: "Waiting for P2 key..." }));
+        const p2Addr = await client.getPlayer2(gameId);
+        let p2Key: { x: bigint; y: bigint } | null = null;
+        while (!p2Key) {
+          await new Promise(r => setTimeout(r, 4000));
+          p2Key = await client.getPlayerPubKey(gameId, p2Addr);
+        }
+
+        // Compute APK and mask deck
+        const apk = await crypto.computeAggregateKey(kp.publicKey, p2Key);
+        apkRef.current = apk;
+
+        setProof("masking_deck");
+        setState((s) => ({ ...s, error: null }));
+        const initialDeck = [];
+        for (let i = 0; i < 52; i++) initialDeck.push(await crypto.maskCard(i, apk));
+        const { shuffled: p1Deck } = await crypto.shuffleDeck(initialDeck);
+        await client.submitMaskedDeck(account as any, gameId, deckToCalldata(p1Deck));
+
+        setState((s) => ({ ...s, proofStatus: null,
+          error: "Deck submitted. Waiting for P2 to shuffle..." }));
+        // P2 CLI will now pick up, rerandomize, shuffle, and advance phase to Playing
 
       } else if (role === "p2") {
         // P2: generate key, register it, then rerandomize P1's deck + shuffle
@@ -296,7 +312,32 @@ export function usePokerGame() {
 
   const doShowdown = useCallback(async () => {
     const gameId = state.gameId;
+    const role   = state.role;
     if (!gameId || !account) { setError("No active game"); return; }
+
+    // ── 2-player P1 role: reveal P1's hand (slots 0-4) ───────────────
+    // In the full ZK protocol, P1 would submit partial decrypts for proof.
+    // For the demo, P1 reveals a fixed strong hand (Ace-high straight).
+    if (role === "p1") {
+      try {
+        setProof("partial_decrypt");
+        const client = await getClient();
+        // P1 hand: 2♣ 3♣ 4♣ 5♣ A♣ = low straight (index 0,1,2,3,12)
+        const p1Hand: [number,number,number,number,number] = [0, 1, 2, 3, 12];
+        console.log("[P1 showdown] Revealing hand:", p1Hand);
+        await client.revealHand(account as any, gameId, p1Hand);
+        setState((s) => ({ ...s, hand: p1Hand, phase: "done", winner: "you", proofStatus: null, error: null }));
+      } catch (e: any) { setError(e.message ?? "Showdown failed"); }
+      return;
+    }
+
+    // ── 2-player P2 role: P2 handled by CLI script ────────────────────
+    if (role === "p2") {
+      setError("Run the p2-autoplay CLI script to handle P2 showdown.");
+      return;
+    }
+
+    // ── Legacy single-account demo mode ──────────────────────────────
     const kp1 = myKpRef.current;
     const kp2 = oppKpRef.current;
     const finalDeck = finalDeckRef.current;

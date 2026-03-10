@@ -467,6 +467,16 @@ export class PokerContractClient {
     });
     return result[0];
   }
+
+  async getPlayerPubKey(gameId: string, playerAddr: string): Promise<{ x: bigint; y: bigint } | null> {
+    const [xr, yr] = await Promise.all([
+      this.provider.callContract({ contractAddress: this.gameAddress, entrypoint: "get_pk_x", calldata: [gameId, playerAddr] }),
+      this.provider.callContract({ contractAddress: this.gameAddress, entrypoint: "get_pk_y", calldata: [gameId, playerAddr] }),
+    ]);
+    const x = BigInt(xr[0]) + BigInt(xr[1]) * (1n << 128n);
+    const y = BigInt(yr[0]) + BigInt(yr[1]) * (1n << 128n);
+    return x === 0n ? null : { x, y };
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
