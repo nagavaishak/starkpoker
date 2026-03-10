@@ -16,7 +16,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   if (!mounted) return null;
 
   return (
-    <StarknetConfig chains={[mainnet, sepolia]} provider={rpc} connectors={connectors} autoConnect>
+    <StarknetConfig chains={[sepolia, mainnet]} provider={rpc} connectors={connectors} autoConnect>
       {children}
     </StarknetConfig>
   );
