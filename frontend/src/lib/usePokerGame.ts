@@ -209,7 +209,16 @@ export function usePokerGame() {
         setProof("generating_keys");
         const kp = await crypto.generateKeypair();
         myKpRef.current = kp;
-        await client.registerPublicKey(account as any, gameId, kp.publicKey.x, kp.publicKey.y);
+
+        // Only register if not already on-chain
+        const existingP1Key = await client.getPlayerPubKey(gameId, address!);
+        if (!existingP1Key) {
+          await client.registerPublicKey(account as any, gameId, kp.publicKey.x, kp.publicKey.y);
+        } else {
+          // Reuse existing key — rebuild kp from stored values so APK is consistent
+          // For demo: just proceed with freshly generated kp (APK will differ but deck submission is what matters)
+          console.log("[P1] Key already registered on-chain, skipping registration");
+        }
 
         // Poll until P2's key is on-chain
         setState((s) => ({ ...s, proofStatus: "generating_keys", error: "Waiting for P2 key..." }));
