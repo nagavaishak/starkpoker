@@ -243,9 +243,9 @@ export class PokerContractClient {
     this.gameAddress = contracts.gameAddress;
     this.strkAddress = contracts.strkAddress;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.strk = new (Contract as any)(ERC20_ABI, this.strkAddress, this.provider);
+    this.strk = new Contract({ abi: ERC20_ABI as any, address: this.strkAddress, providerOrAccount: this.provider } as any);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.game = new (Contract as any)(POKER_GAME_ABI, this.gameAddress, this.provider);
+    this.game = new Contract({ abi: POKER_GAME_ABI as any, address: this.gameAddress, providerOrAccount: this.provider } as any);
   }
 
   // ── Approve STRK allowance then create a new game ─────────────────────
