@@ -231,38 +231,29 @@ export interface PokerContracts {
   strkAddress: string;
 }
 
-// u256 calldata: [low, high] via starknet.js cairo helpers
-function u256Calldata(value: bigint): string[] {
-  return CallData.compile([cairo.uint256(value)]);
-}
-
 export class PokerContractClient {
   readonly provider: RpcProvider;
   readonly gameAddress: string;
   readonly strkAddress: string;
+  private strk: Contract;
+  private game: Contract;
 
   constructor(rpcUrl: string, contracts: PokerContracts) {
     this.provider = new RpcProvider({ nodeUrl: rpcUrl });
     this.gameAddress = contracts.gameAddress;
     this.strkAddress = contracts.strkAddress;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.strk = new (Contract as any)(ERC20_ABI, this.strkAddress, this.provider);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.game = new (Contract as any)(POKER_GAME_ABI, this.gameAddress, this.provider);
   }
 
   // ── Approve STRK allowance then create a new game ─────────────────────
 
   async createGame(account: Account, ante: bigint): Promise<string> {
     const res = await account.execute([
-      // 1. approve(game_contract, ante)
-      {
-        contractAddress: this.strkAddress,
-        entrypoint: "approve",
-        calldata: [this.gameAddress, ...u256Calldata(ante)],
-      },
-      // 2. create_game(ante)
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "create_game",
-        calldata: u256Calldata(ante),
-      },
+      this.strk.populate("approve", { spender: this.gameAddress, amount: cairo.uint256(ante) }),
+      this.game.populate("create_game", { ante: cairo.uint256(ante) }),
     ]);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const receipt = await account.waitForTransaction(res.transaction_hash) as any;
@@ -274,18 +265,8 @@ export class PokerContractClient {
   async joinGame(account: Account, gameId: string): Promise<void> {
     const pot = await this.getPot(gameId);
     const res = await account.execute([
-      // 1. approve(game_contract, ante)
-      {
-        contractAddress: this.strkAddress,
-        entrypoint: "approve",
-        calldata: [this.gameAddress, ...u256Calldata(pot)],
-      },
-      // 2. join_game(game_id)
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "join_game",
-        calldata: [gameId],
-      },
+      this.strk.populate("approve", { spender: this.gameAddress, amount: cairo.uint256(pot) }),
+      this.game.populate("join_game", { game_id: gameId }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
@@ -299,11 +280,11 @@ export class PokerContractClient {
     pkY: bigint
   ): Promise<void> {
     const res = await account.execute([
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "register_public_key",
-        calldata: [gameId, ...u256Calldata(pkX), ...u256Calldata(pkY)],
-      },
+      this.game.populate("register_public_key", {
+        game_id: gameId,
+        pk_x: cairo.uint256(pkX),
+        pk_y: cairo.uint256(pkY),
+      }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
@@ -315,13 +296,8 @@ export class PokerContractClient {
     gameId: string,
     cardFelts: string[]   // 416 felt252 hex strings
   ): Promise<void> {
-    // Span<felt252> calldata: [length, elem0, elem1, ...]
     const res = await account.execute([
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "submit_masked_deck",
-        calldata: [gameId, num.toHex(cardFelts.length), ...cardFelts],
-      },
+      this.game.populate("submit_masked_deck", { game_id: gameId, cards: cardFelts }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
@@ -334,11 +310,7 @@ export class PokerContractClient {
     cardFelts: string[]   // 416 felt252 hex strings
   ): Promise<void> {
     const res = await account.execute([
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "submit_shuffle",
-        calldata: [gameId, num.toHex(cardFelts.length), ...cardFelts],
-      },
+      this.game.populate("submit_shuffle", { game_id: gameId, cards: cardFelts }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
@@ -354,18 +326,13 @@ export class PokerContractClient {
     proofCalldata: string[]  // 2005 felt252 strings from garigaProofToCalldata()
   ): Promise<void> {
     const res = await account.execute([
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "submit_partial_decrypt",
-        calldata: [
-          gameId,
-          cardIdx.toString(),
-          ...u256Calldata(pdX),
-          ...u256Calldata(pdY),
-          num.toHex(proofCalldata.length),
-          ...proofCalldata,
-        ],
-      },
+      this.game.populate("submit_partial_decrypt", {
+        game_id: gameId,
+        card_idx: cardIdx,
+        pd_x: cairo.uint256(pdX),
+        pd_y: cairo.uint256(pdY),
+        full_proof_with_hints: proofCalldata,
+      }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
@@ -374,16 +341,8 @@ export class PokerContractClient {
 
   async placeBet(account: Account, gameId: string, amount: bigint): Promise<void> {
     const res = await account.execute([
-      {
-        contractAddress: this.strkAddress,
-        entrypoint: "approve",
-        calldata: [this.gameAddress, ...u256Calldata(amount)],
-      },
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "place_bet",
-        calldata: [gameId, ...u256Calldata(amount)],
-      },
+      this.strk.populate("approve", { spender: this.gameAddress, amount: cairo.uint256(amount) }),
+      this.game.populate("place_bet", { game_id: gameId, amount: cairo.uint256(amount) }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
@@ -391,38 +350,22 @@ export class PokerContractClient {
   async callBet(account: Account, gameId: string): Promise<void> {
     const pending = await this.getPendingBet(gameId);
     const res = await account.execute([
-      {
-        contractAddress: this.strkAddress,
-        entrypoint: "approve",
-        calldata: [this.gameAddress, ...u256Calldata(pending)],
-      },
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "call_bet",
-        calldata: [gameId],
-      },
+      this.strk.populate("approve", { spender: this.gameAddress, amount: cairo.uint256(pending) }),
+      this.game.populate("call_bet", { game_id: gameId }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
 
   async fold(account: Account, gameId: string): Promise<void> {
     const res = await account.execute([
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "fold",
-        calldata: [gameId],
-      },
+      this.game.populate("fold", { game_id: gameId }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
 
   async checkAction(account: Account, gameId: string): Promise<void> {
     const res = await account.execute([
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "check_action",
-        calldata: [gameId],
-      },
+      this.game.populate("check_action", { game_id: gameId }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
@@ -435,11 +378,11 @@ export class PokerContractClient {
     cardIndices: [number, number, number, number, number]
   ): Promise<void> {
     const res = await account.execute([
-      {
-        contractAddress: this.gameAddress,
-        entrypoint: "reveal_hand",
-        calldata: [gameId, ...cardIndices.map(num.toHex)],
-      },
+      this.game.populate("reveal_hand", {
+        game_id: gameId,
+        c0: cardIndices[0], c1: cardIndices[1], c2: cardIndices[2],
+        c3: cardIndices[3], c4: cardIndices[4],
+      }),
     ]);
     await account.waitForTransaction(res.transaction_hash);
   }
