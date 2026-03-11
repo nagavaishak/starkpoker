@@ -477,6 +477,21 @@ export class PokerContractClient {
     const y = BigInt(yr[0]) + BigInt(yr[1]) * (1n << 128n);
     return x === 0n ? null : { x, y };
   }
+
+  async getHand(gameId: string, playerAddr: string): Promise<number[] | null> {
+    try {
+      const r = await this.provider.callContract({
+        contractAddress: this.gameAddress,
+        entrypoint: "get_hand",
+        calldata: [gameId, playerAddr],
+      });
+      const cards = r.slice(0, 5).map(Number);
+      if (cards.every(c => c === 0)) return null;
+      return cards;
+    } catch {
+      return null;
+    }
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────

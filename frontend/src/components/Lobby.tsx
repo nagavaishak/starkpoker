@@ -18,7 +18,7 @@ export function Lobby({ onCreateGame, onJoinGame, onResumeGame, gameId, error, i
   const { status } = useAccount();
   const connected = status === "connected" || status === "reconnecting";
 
-  const [anteEth, setAnteEth] = useState("0.001");
+  const [anteEth, setAnteEth] = useState("1");
   const [joinId, setJoinId] = useState("");
   const [resumeId, setResumeId] = useState("");
 

@@ -31,3 +31,4 @@ circuits/*/ptau/
 # Editor
 .idea/
 *.swp
+.vercel

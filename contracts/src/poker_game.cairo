@@ -99,6 +99,9 @@ pub trait IPokerGame<TContractState> {
     ) -> u256;
     fn get_pending_bet(self: @TContractState, game_id: felt252) -> u256;
     fn get_checks(self: @TContractState, game_id: felt252) -> u8;
+    fn get_hand(
+        self: @TContractState, game_id: felt252, player: ContractAddress,
+    ) -> (u32, u32, u32, u32, u32);
 }
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
@@ -668,6 +671,17 @@ mod PokerGame {
         }
         fn get_checks(self: @ContractState, game_id: felt252) -> u8 {
             self.check_count.read(game_id)
+        }
+        fn get_hand(
+            self: @ContractState, game_id: felt252, player: ContractAddress,
+        ) -> (u32, u32, u32, u32, u32) {
+            (
+                self.hand_c0.read((game_id, player)),
+                self.hand_c1.read((game_id, player)),
+                self.hand_c2.read((game_id, player)),
+                self.hand_c3.read((game_id, player)),
+                self.hand_c4.read((game_id, player)),
+            )
         }
     }
 

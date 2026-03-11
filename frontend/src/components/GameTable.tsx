@@ -46,7 +46,10 @@ function handRank(cards: number[]): string {
 }
 
 function formatStrk(wei: bigint): string {
-  return (Number(wei) / 1e18).toFixed(2);
+  const n = Number(wei) / 1e18;
+  if (n === 0) return "0.00";
+  if (n >= 0.01) return n.toFixed(2);
+  return n.toFixed(4);
 }
 
 function shortAddr(addr: string | undefined): string {
@@ -57,12 +60,12 @@ function shortAddr(addr: string | undefined): string {
 export function GameTable({
   state, address, onCheck, onFold, onDoShuffle, onDoShowdown, onPollPhase
 }: GameTableProps) {
-  const { phase, pot, hand, winner, proofStatus, error, gameId } = state;
+  const { phase, pot, hand, opponentHand, winner, proofStatus, error, gameId } = state;
   const elapsed = useProofTimer(proofStatus);
 
-  // Auto-poll when waiting for opponent
+  // Auto-poll when waiting for opponent or for phase transitions
   useEffect(() => {
-    if (phase === "waiting" || phase === "registering") {
+    if (phase === "waiting" || phase === "registering" || phase === "shuffling") {
       const id = setInterval(onPollPhase, 4000);
       return () => clearInterval(id);
     }
@@ -119,10 +122,19 @@ export function GameTable({
           <ProofStatusBar status={proofStatus} elapsedMs={elapsed} />
         )}
 
-        {/* Opponent hand (always face-down) */}
+        {/* Opponent hand */}
         <div className="flex flex-col items-center gap-2">
           <p className="text-xs text-gray-500 uppercase tracking-widest">Opponent</p>
-          <HandDisplay indices={[]} revealed={false} size="sm" />
+          <HandDisplay
+            indices={opponentHand}
+            revealed={(phase === "showdown" || phase === "done") && opponentHand.length > 0}
+            size="sm"
+          />
+          {opponentHand.length === 5 && (phase === "showdown" || phase === "done") && (
+            <p className="mt-1 text-gray-400 text-xs tracking-wide">
+              {handRank(opponentHand)}
+            </p>
+          )}
         </div>
 
         {/* Table divider */}
@@ -149,6 +161,16 @@ export function GameTable({
 
         {/* Action area */}
         <div className="flex flex-col items-center gap-3 w-full max-w-md mt-2">
+
+          {/* Refresh button — always visible except idle/done */}
+          {phase !== "idle" && phase !== "done" && (
+            <button
+              onClick={onPollPhase}
+              className="self-end text-xs text-green-600 hover:text-green-400 underline underline-offset-2 transition-colors"
+            >
+              ↻ Refresh
+            </button>
+          )}
 
           {/* Shuffle CTA */}
           {(phase === "registering" || phase === "shuffling") && (

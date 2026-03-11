@@ -488,6 +488,35 @@ export class PokerContractClient {
     });
     return Number(result[0]);
   }
+
+  async getPlayer1(gameId: string): Promise<string> {
+    const result = await this.provider.callContract({
+      contractAddress: this.gameAddress,
+      entrypoint: "get_player1",
+      calldata: [gameId],
+    });
+    return result[0];
+  }
+
+  async getPlayer2(gameId: string): Promise<string> {
+    const result = await this.provider.callContract({
+      contractAddress: this.gameAddress,
+      entrypoint: "get_player2",
+      calldata: [gameId],
+    });
+    return result[0];
+  }
+
+  async getHand(gameId: string, playerAddr: string): Promise<number[] | null> {
+    const r = await this.provider.callContract({
+      contractAddress: this.gameAddress,
+      entrypoint: "get_hand",
+      calldata: [gameId, playerAddr],
+    });
+    const cards = r.slice(0, 5).map(Number);
+    if (cards.every(c => c === 0)) return null;
+    return cards;
+  }
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────

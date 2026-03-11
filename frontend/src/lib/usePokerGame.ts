@@ -28,6 +28,7 @@ export interface GameState {
   phase: GamePhase;
   pot: bigint;
   hand: number[];
+  opponentHand: number[];
   winner: "you" | "opponent" | "tie" | null;
   proofStatus: ProofStatus;
   error: string | null;
@@ -66,6 +67,7 @@ export function usePokerGame() {
     phase: "idle",
     pot: 0n,
     hand: [],
+    opponentHand: [],
     winner: null,
     proofStatus: null,
     error: null,
@@ -134,11 +136,16 @@ export function usePokerGame() {
     if (!account || !address) { setError("Connect wallet first"); return; }
     try {
       const client = await getClient();
-      const [p1, p2, phaseNum, pot] = await Promise.all([
+      // Check if game exists first (pot is safe to read even for non-existent games)
+      const pot = await client.getPot(gameId);
+      if (pot === 0n) {
+        setError(`Game ${gameId} not found — create a new game or check the ID`);
+        return;
+      }
+      const [p1, p2, phaseNum] = await Promise.all([
         client.getPlayer1(gameId),
         client.getPlayer2(gameId),
         client.getGamePhase(gameId),
-        client.getPot(gameId),
       ]);
 
       let role: "p1" | "p2" | null = null;
@@ -296,9 +303,13 @@ export function usePokerGame() {
       setState((s) => ({ ...s, error: null }));
       const client = await getClient();
       await client.checkAction(account as any, gameId);
-      // Both players check; in the demo we call check twice
-      await client.checkAction(account as any, gameId);
-      setState((s) => ({ ...s, phase: "showdown" }));
+      // Poll until Showdown (opponent may need to check too)
+      let phaseNum = await client.getGamePhase(gameId);
+      while (phaseNum < 4) {
+        await new Promise(r => setTimeout(r, 3000));
+        phaseNum = await client.getGamePhase(gameId);
+      }
+      setState((s) => ({ ...s, phase: "showdown", error: null }));
     } catch (e: any) {
       setError(e.message ?? "Check failed");
     }
@@ -334,8 +345,19 @@ export function usePokerGame() {
         // P1 hand: 2♣ 3♣ 4♣ 5♣ A♣ = low straight (index 0,1,2,3,12)
         const p1Hand: [number,number,number,number,number] = [0, 1, 2, 3, 12];
         console.log("[P1 showdown] Revealing hand:", p1Hand);
+        setState((s) => ({ ...s, hand: p1Hand, proofStatus: null }));
         await client.revealHand(account as any, gameId, p1Hand);
-        setState((s) => ({ ...s, hand: p1Hand, phase: "done", winner: "you", proofStatus: null, error: null }));
+        // Poll for Done phase — contract auto-settles when both players reveal
+        let phaseNum = await client.getGamePhase(gameId);
+        while (phaseNum < 5) {
+          await new Promise(r => setTimeout(r, 2000));
+          phaseNum = await client.getGamePhase(gameId);
+        }
+        const pot = await client.getPot(gameId);
+        // P2 demo hand: 9♠ T♠ J♠ Q♠ K♠ — King-high straight flush beats P1's low straight flush
+        const oppDisplay = [47, 48, 49, 50, 51];
+        setState((s) => ({ ...s, phase: "done", pot, winner: "opponent",
+          opponentHand: oppDisplay, proofStatus: null, error: null }));
       } catch (e: any) { setError(e.message ?? "Showdown failed"); }
       return;
     }
