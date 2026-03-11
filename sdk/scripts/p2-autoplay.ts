@@ -9,7 +9,8 @@
  *   5. Read P1's deck from chain, rerandomize + shuffle
  *   6. Submit P2 shuffle on-chain
  *   7. Check (advance to showdown)
- *   8. Reveal P2's hand (slots 5-9) on-chain → triggers settlement
+ *   8. Real card recovery: submit partial decrypts, wait for P1's, recover actual cards
+ *   9. Reveal P2's real hand on-chain → triggers settlement
  */
 
 import { RpcProvider } from "starknet";
@@ -17,19 +18,18 @@ import { buildAccount, PokerContractClient, deckToCalldata } from "../src/starkn
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-const GAME_ADDRESS   = "0x0006005f4adc7ceffeb86779ceedc89855ee5cb24f3841fa3dfe6a8d66059208";
+const GAME_ADDRESS   = "0x7473a8171b2489dfef7d0b450c8a4136e7cf1ca8e2b67064b5cc33389c77261";
 const STRK_ADDRESS   = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const RPC_URL        = "https://api.cartridge.gg/x/starknet/sepolia";
 
 const P2_ADDRESS     = "0x0688b2fd40580944024e7cc5dab915a80d892f8a404911d4d171ab08322fb0fb";
 const P2_PRIVATE_KEY = "0x0260c0f93e326ef62f8f46d49f5156dad19abf2451520d7f727cea9115931ccc";
 
-const GAME_ID        = "4";
+const GAME_ID        = process.argv[2] ?? "7";
 
-// P2's hand slots + demo reveal (Royal Flush: T♠J♠Q♠K♠A♠)
-const P2_SLOTS       = [5, 6, 7, 8, 9];
-const P2_DEMO_HAND   = [48, 49, 50, 51, 47] as [number,number,number,number,number];
-// T♠=48, J♠=49, Q♠=50, K♠=51, 9♠=47  → high straight flush
+// P1 holds slots 0-4, P2 holds slots 5-9 (post-shuffle deal)
+const P1_SLOTS = [0, 1, 2, 3, 4];
+const P2_SLOTS = [5, 6, 7, 8, 9];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +82,8 @@ async function main() {
     generateKeypair,
     computeAggregateKey,
     rerandomizeDeck,
+    partialDecrypt,
+    recoverCard,
   } = await import("babyjubjub-starknet");
 
   // ── 1. Wait for game to appear on-chain, then check phase ─────────────────
@@ -169,12 +171,13 @@ async function main() {
   console.log(` ${flatFelts.length} felts read`);
 
   // Reconstruct MaskedCard[]
-  const p1Deck: Array<{ c1: { x: bigint; y: bigint }; c2: { x: bigint; y: bigint } }> = [];
+  const p1Deck: Array<{ c1: { x: bigint; y: bigint }; c2: { x: bigint; y: bigint }; r: bigint }> = [];
   for (let i = 0; i < 52; i++) {
     const b = i * 8;
     p1Deck.push({
       c1: { x: u256pair(flatFelts[b],     flatFelts[b + 1]), y: u256pair(flatFelts[b + 2], flatFelts[b + 3]) },
       c2: { x: u256pair(flatFelts[b + 4], flatFelts[b + 5]), y: u256pair(flatFelts[b + 6], flatFelts[b + 7]) },
+      r: 0n,
     });
   }
 
@@ -213,18 +216,54 @@ async function main() {
   }
 
   // ── 11. Wait for Showdown ─────────────────────────────────────────────────
-  await poll("Showdown phase (phase ≥ 4)", async () => {
+  await poll("Showdown phase (phase = 4)", async () => {
     const p = await client.getGamePhase(GAME_ID);
-    return p >= 4 ? p : null;
+    return p === 4 ? p : null;
   });
 
-  // ── 12. Reveal P2 hand ────────────────────────────────────────────────────
-  console.log("\n[12] Revealing P2 hand:", P2_DEMO_HAND);
-  console.log("     T♠ J♠ Q♠ K♠ 9♠ — Straight Flush");
-  await client.revealHand(account as any, GAME_ID, P2_DEMO_HAND);
+  // ── 12. Real card recovery ────────────────────────────────────────────────
+  console.log("\n[12] Computing P2 partial decrypts for P1's slots (0-4)...");
+  const pd2ForP1 = await Promise.all(
+    P1_SLOTS.map(slot => partialDecrypt(finalDeck[slot].c1, kp2.secretKey))
+  );
+  console.log("     ✅ Computed");
+
+  console.log("\n[13] Submitting P2 partial decrypts for P1's slots (batch)...");
+  await client.submitPartialDecryptsBatch(account as any, GAME_ID, P1_SLOTS, pd2ForP1);
+  console.log("     ✅ Submitted");
+
+  // ── 13. Wait for P1 to submit their partial decrypts for P2's slots ───────
+  const pd1ForP2 = await poll(
+    "P1 partial decrypts for P2 slots (5-9)",
+    async () => {
+      const check = await client.getPartialDecrypt(GAME_ID, p1Addr, P2_SLOTS[0]);
+      if (!check) return null;
+      return Promise.all(P2_SLOTS.map(slot => client.getPartialDecrypt(GAME_ID, p1Addr, slot)));
+    },
+    3000,
+  ) as Array<{ x: bigint; y: bigint }>;
+
+  // ── 14. Recover P2's actual cards ────────────────────────────────────────
+  console.log("\n[14] Recovering P2's actual cards...");
+  const p2Hand: number[] = [];
+  for (let i = 0; i < P2_SLOTS.length; i++) {
+    const slot = P2_SLOTS[i];
+    const pd2Own = await partialDecrypt(finalDeck[slot].c1, kp2.secretKey);
+    const card = await recoverCard(
+      { ...finalDeck[slot], r: 0n },
+      [pd1ForP2[i]!, pd2Own],
+    );
+    p2Hand.push(card);
+    console.log(`     slot ${slot} → card ${card}`);
+  }
+  console.log(`     P2 hand: [${p2Hand.join(", ")}]`);
+
+  // ── 15. Reveal P2 hand ────────────────────────────────────────────────────
+  console.log("\n[15] Revealing P2 hand on-chain...");
+  await client.revealHand(account as any, GAME_ID, p2Hand as [number,number,number,number,number]);
   console.log("     ✅ P2 hand revealed!");
 
-  // ── 13. Done ──────────────────────────────────────────────────────────────
+  // ── 16. Done ──────────────────────────────────────────────────────────────
   console.log("\n╔══════════════════════════════════╗");
   console.log("║  P2 complete! Waiting for P1     ║");
   console.log("║  P1 must now reveal their hand.  ║");

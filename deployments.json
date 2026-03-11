@@ -1,7 +1,7 @@
 {
   "sepolia": {
     "network": "starknet-sepolia",
-    "pokerGame": "0x0006005f4adc7ceffeb86779ceedc89855ee5cb24f3841fa3dfe6a8d66059208",
+    "pokerGame": "0x7473a8171b2489dfef7d0b450c8a4136e7cf1ca8e2b67064b5cc33389c77261",
     "strkToken": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
     "classHash": "0x411eb0d3b65e83385097d35ce178763693458885a1ed306721692ee5ab119b7",
     "deployTx": "0x006cb4bb9d292b9e94ec3c8426fa9f52b0bb7d31e3812b37a74e3898a3107c95",

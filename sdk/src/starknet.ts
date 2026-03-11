@@ -183,6 +183,66 @@ export const POKER_GAME_ABI = [
     outputs: [{ type: "core::integer::u256" }],
     state_mutability: "view",
   },
+  {
+    type: "function",
+    name: "submit_partial_decrypt_raw",
+    inputs: [
+      { name: "game_id", type: "core::felt252" },
+      { name: "card_idx", type: "core::integer::u32" },
+      { name: "pd_x", type: "core::integer::u256" },
+      { name: "pd_y", type: "core::integer::u256" },
+    ],
+    outputs: [],
+    state_mutability: "external",
+  },
+  {
+    type: "function",
+    name: "get_pd_x",
+    inputs: [
+      { name: "game_id", type: "core::felt252" },
+      { name: "player", type: "core::starknet::contract_address::ContractAddress" },
+      { name: "card_idx", type: "core::integer::u32" },
+    ],
+    outputs: [{ type: "core::integer::u256" }],
+    state_mutability: "view",
+  },
+  {
+    type: "function",
+    name: "get_pd_y",
+    inputs: [
+      { name: "game_id", type: "core::felt252" },
+      { name: "player", type: "core::starknet::contract_address::ContractAddress" },
+      { name: "card_idx", type: "core::integer::u32" },
+    ],
+    outputs: [{ type: "core::integer::u256" }],
+    state_mutability: "view",
+  },
+  {
+    type: "function",
+    name: "get_deck_felt",
+    inputs: [
+      { name: "game_id", type: "core::felt252" },
+      { name: "idx", type: "core::integer::u32" },
+    ],
+    outputs: [{ type: "core::felt252" }],
+    state_mutability: "view",
+  },
+  {
+    type: "function",
+    name: "get_hand",
+    inputs: [
+      { name: "game_id", type: "core::felt252" },
+      { name: "player", type: "core::starknet::contract_address::ContractAddress" },
+    ],
+    outputs: [
+      { type: "core::integer::u32" },
+      { type: "core::integer::u32" },
+      { type: "core::integer::u32" },
+      { type: "core::integer::u32" },
+      { type: "core::integer::u32" },
+    ],
+    state_mutability: "view",
+  },
 ] as const;
 
 // ─── ERC20 ABI (approve + balance_of) ────────────────────────────────────
@@ -516,6 +576,71 @@ export class PokerContractClient {
     const cards = r.slice(0, 5).map(Number);
     if (cards.every(c => c === 0)) return null;
     return cards;
+  }
+
+  // ── Batch submit partial decrypts (no ZK proof) ───────────────────────
+
+  async submitPartialDecryptsBatch(
+    account: Account,
+    gameId: string,
+    slots: number[],
+    pds: Array<{ x: bigint; y: bigint }>
+  ): Promise<void> {
+    const calls = slots.map((slot, i) => ({
+      contractAddress: this.gameAddress,
+      entrypoint: "submit_partial_decrypt_raw",
+      calldata: [gameId, slot.toString(), ...u256Calldata(pds[i].x), ...u256Calldata(pds[i].y)],
+    }));
+    const res = await account.execute(calls);
+    await account.waitForTransaction(res.transaction_hash);
+  }
+
+  // ── Read a partial decrypt stored by a player ─────────────────────────
+
+  async getPartialDecrypt(
+    gameId: string,
+    playerAddr: string,
+    cardIdx: number
+  ): Promise<{ x: bigint; y: bigint } | null> {
+    const [xr, yr] = await Promise.all([
+      this.provider.callContract({
+        contractAddress: this.gameAddress,
+        entrypoint: "get_pd_x",
+        calldata: [gameId, playerAddr, cardIdx.toString()],
+      }),
+      this.provider.callContract({
+        contractAddress: this.gameAddress,
+        entrypoint: "get_pd_y",
+        calldata: [gameId, playerAddr, cardIdx.toString()],
+      }),
+    ]);
+    const x = BigInt(xr[0]) + BigInt(xr[1]) * (1n << 128n);
+    const y = BigInt(yr[0]) + BigInt(yr[1]) * (1n << 128n);
+    return x === 0n ? null : { x, y };
+  }
+
+  // ── Read a deck slot (8 felts → MaskedCard) ───────────────────────────
+
+  async getDeckSlot(
+    gameId: string,
+    slotIdx: number
+  ): Promise<{ c1: { x: bigint; y: bigint }; c2: { x: bigint; y: bigint } }> {
+    const base = slotIdx * 8;
+    const reads = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        this.provider.callContract({
+          contractAddress: this.gameAddress,
+          entrypoint: "get_deck_felt",
+          calldata: [gameId, (base + i).toString()],
+        })
+      )
+    );
+    const f = reads.map(r => BigInt(r[0]));
+    const u = (lo: bigint, hi: bigint) => lo + hi * (1n << 128n);
+    return {
+      c1: { x: u(f[0], f[1]), y: u(f[2], f[3]) },
+      c2: { x: u(f[4], f[5]), y: u(f[6], f[7]) },
+    };
   }
 }
 
