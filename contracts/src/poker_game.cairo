@@ -55,6 +55,17 @@ pub trait IPokerGame<TContractState> {
         full_proof_with_hints: Span<felt252>,
     );
 
+    /// Submit a partial decryption without ZK proof (demo / dev mode).
+    /// pd = sk · deck[card_idx].c1  — caller asserts this off-chain.
+    /// Works in Playing OR Showdown phase.
+    fn submit_partial_decrypt_raw(
+        ref self: TContractState,
+        game_id: felt252,
+        card_idx: u32,
+        pd_x: u256,
+        pd_y: u256,
+    );
+
     // ── Day 5 — Betting ──────────────────────────────────────────────────────
     /// Place a bet.  The other player must call or fold.
     fn place_bet(ref self: TContractState, game_id: felt252, amount: u256);
@@ -451,6 +462,33 @@ mod PokerGame {
             assert(*pub_inputs.at(5) == pd_y, 'PD_Y_MISMATCH');
 
             // Store the verified partial decrypt
+            self.pd_x.entry(game_id).entry(caller).entry(card_idx).write(pd_x);
+            self.pd_y.entry(game_id).entry(caller).entry(card_idx).write(pd_y);
+            self.last_action.write(game_id, get_block_timestamp());
+
+            self.emit(PartialDecryptSubmitted { game_id, player: caller, card_idx });
+        }
+
+        // ── submit_partial_decrypt_raw ────────────────────────────────────────
+
+        fn submit_partial_decrypt_raw(
+            ref self: ContractState,
+            game_id: felt252,
+            card_idx: u32,
+            pd_x: u256,
+            pd_y: u256,
+        ) {
+            let caller = get_caller_address();
+            let phase = self.phase.read(game_id);
+            assert(
+                phase == GamePhase::Playing || phase == GamePhase::Showdown,
+                'WRONG_PHASE',
+            );
+            let p1 = self.player1.read(game_id);
+            let p2 = self.player2.read(game_id);
+            assert(caller == p1 || caller == p2, 'NOT_A_PLAYER');
+            assert(card_idx < DECK_SIZE, 'CARD_IDX_OOB');
+
             self.pd_x.entry(game_id).entry(caller).entry(card_idx).write(pd_x);
             self.pd_y.entry(game_id).entry(caller).entry(card_idx).write(pd_y);
             self.last_action.write(game_id, get_block_timestamp());

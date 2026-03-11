@@ -12,7 +12,7 @@ export const DEVNET_RPC = "http://localhost:5050";
 
 // Sepolia
 export const SEPOLIA_GAME_ADDRESS =
-  (process.env.NEXT_PUBLIC_GAME_ADDRESS ?? "0x0006005f4adc7ceffeb86779ceedc89855ee5cb24f3841fa3dfe6a8d66059208").trim();
+  (process.env.NEXT_PUBLIC_GAME_ADDRESS ?? "0x7473a8171b2489dfef7d0b450c8a4136e7cf1ca8e2b67064b5cc33389c77261").trim();
 export const SEPOLIA_STRK_ADDRESS =
   "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 export const SEPOLIA_RPC = process.env.NEXT_PUBLIC_RPC_URL ?? "https://api.cartridge.gg/x/starknet/sepolia";

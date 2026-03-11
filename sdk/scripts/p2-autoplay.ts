@@ -22,8 +22,8 @@ const GAME_ADDRESS   = "0x7473a8171b2489dfef7d0b450c8a4136e7cf1ca8e2b67064b5cc33
 const STRK_ADDRESS   = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const RPC_URL        = "https://api.cartridge.gg/x/starknet/sepolia";
 
-const P2_ADDRESS     = "0x0688b2fd40580944024e7cc5dab915a80d892f8a404911d4d171ab08322fb0fb";
-const P2_PRIVATE_KEY = "0x0260c0f93e326ef62f8f46d49f5156dad19abf2451520d7f727cea9115931ccc";
+const P2_ADDRESS     = "0x04D86983FB681B48B1D35a07D789eF3e8DfE2d948400Eb6220aB3eF197e04fc1";
+const P2_PRIVATE_KEY = "0x06f2deea89e8d27e1726617ec1844d114634b1933fb8a0f866fbe91129fd9244";
 
 const GAME_ID        = process.argv[2] ?? "7";
 

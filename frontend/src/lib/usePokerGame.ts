@@ -57,6 +57,40 @@ function addrEq(a: string, b: string) {
   try { return BigInt(a) === BigInt(b); } catch { return false; }
 }
 
+// Hand score for winner comparison (mirrors Cairo hand_eval.cairo)
+function handScore(cards: number[]): number {
+  if (cards.length !== 5) return -1;
+  const ranks = cards.map(c => c % 13);
+  const suits = cards.map(c => Math.floor(c / 13));
+  const flush = suits.every(s => s === suits[0]);
+  const sorted = [...ranks].sort((a, b) => a - b);
+  let straight = sorted[4] - sorted[0] === 4 && new Set(ranks).size === 5;
+  if (sorted[0] === 0 && sorted[1] === 1 && sorted[2] === 2 && sorted[3] === 3 && sorted[4] === 12)
+    straight = true;
+  const counts = new Map<number, number>();
+  for (const r of ranks) counts.set(r, (counts.get(r) ?? 0) + 1);
+  const vals = [...counts.values()].sort((a, b) => b - a);
+  let cat = 0;
+  if (flush && straight) cat = 8;
+  else if (vals[0] === 4) cat = 7;
+  else if (vals[0] === 3 && vals[1] === 2) cat = 6;
+  else if (flush) cat = 5;
+  else if (straight) cat = 4;
+  else if (vals[0] === 3) cat = 3;
+  else if (vals[0] === 2 && vals[1] === 2) cat = 2;
+  else if (vals[0] === 2) cat = 1;
+  const entries = [...counts.entries()].sort((a, b) => b[1] !== a[1] ? b[1] - a[1] : b[0] - a[0]);
+  let kick = 0;
+  for (const [r] of entries) kick = kick * 14 + r;
+  return cat * 10000000 + kick;
+}
+
+function determineWinner(myHand: number[], oppHand: number[]): "you" | "opponent" | "tie" {
+  const my = handScore(myHand);
+  const opp = handScore(oppHand);
+  return my > opp ? "you" : my < opp ? "opponent" : "tie";
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────
 
 export function usePokerGame() {
@@ -252,14 +286,53 @@ export function usePokerGame() {
         // P2 CLI will now pick up, rerandomize, shuffle, and advance phase to Playing
 
       } else if (role === "p2") {
-        // P2: generate key, register it, then rerandomize P1's deck + shuffle
+        // P2: full flow — register key, wait for P1, read deck, rerandomize, shuffle, submit
         setProof("generating_keys");
         const kp = await crypto.generateKeypair();
         myKpRef.current = kp;
         await client.registerPublicKey(account as any, gameId, kp.publicKey.x, kp.publicKey.y);
 
-        setState((s) => ({ ...s, proofStatus: null,
-          error: "P2 key registered. Waiting for P1 to submit masked deck..." }));
+        // Wait for P1's key
+        setState((s) => ({ ...s, proofStatus: "generating_keys", error: "Waiting for P1 key..." }));
+        const p1Addr = await client.getPlayer1(gameId);
+        let p1Key: { x: bigint; y: bigint } | null = null;
+        while (!p1Key) {
+          await new Promise(r => setTimeout(r, 4000));
+          p1Key = await client.getPlayerPubKey(gameId, p1Addr);
+        }
+
+        // Compute APK
+        const apk = await crypto.computeAggregateKey(p1Key, kp.publicKey);
+        apkRef.current = apk;
+
+        // Wait for P1 to submit masked deck
+        setState((s) => ({ ...s, error: "Waiting for P1 masked deck..." }));
+        let shuffleStep = 0;
+        while (shuffleStep < 1) {
+          await new Promise(r => setTimeout(r, 4000));
+          shuffleStep = await client.getShuffleStep(gameId);
+        }
+
+        // Read P1's deck from chain (52 cards × 8 felts)
+        setProof("shuffling");
+        setState((s) => ({ ...s, error: "Reading deck from chain..." }));
+        const deckSlots = await Promise.all(
+          Array.from({ length: 52 }, (_, i) => client.getDeckSlot(gameId, i))
+        );
+        const p1Deck = deckSlots.map(s => ({ ...s, r: 0n }));
+
+        // Rerandomize + shuffle
+        setState((s) => ({ ...s, error: "Shuffling deck..." }));
+        const rerand = await crypto.rerandomizeDeck(p1Deck, apk);
+        const { shuffled: p2Final } = await crypto.shuffleDeck(rerand);
+
+        // Submit shuffle on-chain
+        setState((s) => ({ ...s, error: "Submitting shuffle..." }));
+        await client.submitShuffle(account as any, gameId, deckToCalldata(p2Final));
+
+        finalDeckRef.current = p2Final;
+        const pot = await client.getPot(gameId);
+        setState((s) => ({ ...s, phase: "playing", pot, proofStatus: null, error: null }));
 
       } else {
         // Legacy demo: one account controls both sides
@@ -328,43 +401,155 @@ export function usePokerGame() {
     }
   }, [state.gameId, account, getClient]);
 
-  // ── Showdown: recover + reveal ────────────────────────────────────────
+  // ── Showdown: recover + reveal (real card decryption) ────────────────
 
   const doShowdown = useCallback(async () => {
     const gameId = state.gameId;
     const role   = state.role;
-    if (!gameId || !account) { setError("No active game"); return; }
+    if (!gameId || !account || !address) { setError("No active game"); return; }
 
-    // ── 2-player P1 role: reveal P1's hand (slots 0-4) ───────────────
-    // In the full ZK protocol, P1 would submit partial decrypts for proof.
-    // For the demo, P1 reveals a fixed strong hand (Ace-high straight).
+    // ── 2-player P1 role ─────────────────────────────────────────────
     if (role === "p1") {
+      const sk1 = myKpRef.current?.secretKey;
+      if (!sk1) { setError("No keypair — did you complete the shuffle step?"); return; }
+
       try {
         setProof("partial_decrypt");
-        const client = await getClient();
-        // P1 hand: 2♣ 3♣ 4♣ 5♣ A♣ = low straight (index 0,1,2,3,12)
-        const p1Hand: [number,number,number,number,number] = [0, 1, 2, 3, 12];
-        console.log("[P1 showdown] Revealing hand:", p1Hand);
-        setState((s) => ({ ...s, hand: p1Hand, proofStatus: null }));
-        await client.revealHand(account as any, gameId, p1Hand);
-        // Poll for Done phase — contract auto-settles when both players reveal
+        const [client, crypto] = await Promise.all([getClient(), import("../sdk-bridge")]);
+
+        // 1. Read deck slots 0-9 from chain (P1 slots 0-4, P2 slots 5-9)
+        setState((s) => ({ ...s, error: "Reading deck from chain…" }));
+        const deckSlots = await Promise.all(
+          Array.from({ length: 10 }, (_, i) => client.getDeckSlot(gameId, i))
+        );
+
+        // 2. Compute P1's partial decrypts for P2's slots (5-9) and submit
+        //    so P2 can recover their cards
+        setState((s) => ({ ...s, error: "Submitting partial decrypts…" }));
+        const pd1ForP2 = await Promise.all(
+          P2_SLOTS.map(slot => crypto.partialDecrypt(deckSlots[slot].c1, sk1))
+        );
+        await client.submitPartialDecryptsBatch(
+          account as any, gameId, P2_SLOTS, pd1ForP2
+        );
+
+        // 3. Poll until P2 has submitted their partial decrypts for P1's slots (0-4)
+        setState((s) => ({ ...s, error: "Waiting for P2 partial decrypts…" }));
+        const p2Addr = await client.getPlayer2(gameId);
+        let pd2ForP1: Array<{ x: bigint; y: bigint }> | null = null;
+        while (!pd2ForP1) {
+          await new Promise(r => setTimeout(r, 3000));
+          const check = await client.getPartialDecrypt(gameId, p2Addr, 0);
+          if (check) {
+            pd2ForP1 = await Promise.all(
+              P1_SLOTS.map(slot => client.getPartialDecrypt(gameId, p2Addr, slot))
+            ) as Array<{ x: bigint; y: bigint }>;
+          }
+        }
+
+        // 4. Compute P1's own partial decrypts and recover actual cards
+        const p1Hand: number[] = [];
+        for (let i = 0; i < P1_SLOTS.length; i++) {
+          const slot = P1_SLOTS[i];
+          const pd1Own = await crypto.partialDecrypt(deckSlots[slot].c1, sk1);
+          const card = await crypto.recoverCard(
+            { ...deckSlots[slot], r: 0n },
+            [pd1Own, pd2ForP1[i]]
+          );
+          p1Hand.push(card);
+        }
+
+        // 5. Reveal P1's real hand on-chain
+        setState((s) => ({ ...s, hand: p1Hand, error: null }));
+        await client.revealHand(account as any, gameId, p1Hand as [number,number,number,number,number]);
+
+        // 6. Poll for Done phase (P2 will reveal after reading P1's PDs)
         let phaseNum = await client.getGamePhase(gameId);
         while (phaseNum < 5) {
           await new Promise(r => setTimeout(r, 2000));
           phaseNum = await client.getGamePhase(gameId);
         }
+
+        // 7. Read result
         const pot = await client.getPot(gameId);
-        // P2 demo hand: 9♠ T♠ J♠ Q♠ K♠ — King-high straight flush beats P1's low straight flush
-        const oppDisplay = [47, 48, 49, 50, 51];
-        setState((s) => ({ ...s, phase: "done", pot, winner: "opponent",
-          opponentHand: oppDisplay, proofStatus: null, error: null }));
+        const p2Hand = await client.getHand(gameId, p2Addr);
+        const oppDisplay = p2Hand ?? [];
+        const win = determineWinner(p1Hand, oppDisplay);
+        setState((s) => ({ ...s, phase: "done", pot,
+          winner: win, opponentHand: oppDisplay, proofStatus: null, error: null }));
       } catch (e: any) { setError(e.message ?? "Showdown failed"); }
       return;
     }
 
-    // ── 2-player P2 role: P2 handled by CLI script ────────────────────
+    // ── 2-player P2 role ─────────────────────────────────────────────
     if (role === "p2") {
-      setError("Run the p2-autoplay CLI script to handle P2 showdown.");
+      const sk2 = myKpRef.current?.secretKey;
+      if (!sk2) { setError("No keypair — did you complete the shuffle step?"); return; }
+
+      try {
+        setProof("partial_decrypt");
+        const [client, crypto] = await Promise.all([getClient(), import("../sdk-bridge")]);
+
+        // 1. Read deck slots 0-9 from chain
+        setState((s) => ({ ...s, error: "Reading deck from chain…" }));
+        const deckSlots = await Promise.all(
+          Array.from({ length: 10 }, (_, i) => client.getDeckSlot(gameId, i))
+        );
+
+        // 2. Compute P2's partial decrypts for P1's slots (0-4) and submit
+        setState((s) => ({ ...s, error: "Submitting partial decrypts…" }));
+        const pd2ForP1 = await Promise.all(
+          P1_SLOTS.map(slot => crypto.partialDecrypt(deckSlots[slot].c1, sk2))
+        );
+        await client.submitPartialDecryptsBatch(
+          account as any, gameId, P1_SLOTS, pd2ForP1
+        );
+
+        // 3. Poll until P1 submits their PDs for P2's slots (5-9)
+        setState((s) => ({ ...s, error: "Waiting for P1 partial decrypts…" }));
+        const p1Addr = await client.getPlayer1(gameId);
+        let pd1ForP2: Array<{ x: bigint; y: bigint }> | null = null;
+        while (!pd1ForP2) {
+          await new Promise(r => setTimeout(r, 3000));
+          const check = await client.getPartialDecrypt(gameId, p1Addr, P2_SLOTS[0]);
+          if (check) {
+            pd1ForP2 = await Promise.all(
+              P2_SLOTS.map(slot => client.getPartialDecrypt(gameId, p1Addr, slot))
+            ) as Array<{ x: bigint; y: bigint }>;
+          }
+        }
+
+        // 4. Recover P2's actual cards
+        const p2Hand: number[] = [];
+        for (let i = 0; i < P2_SLOTS.length; i++) {
+          const slot = P2_SLOTS[i];
+          const pd2Own = await crypto.partialDecrypt(deckSlots[slot].c1, sk2);
+          const card = await crypto.recoverCard(
+            { ...deckSlots[slot], r: 0n },
+            [pd2Own, pd1ForP2[i]]
+          );
+          p2Hand.push(card);
+        }
+
+        // 5. Reveal P2's real hand on-chain
+        setState((s) => ({ ...s, hand: p2Hand, error: null }));
+        await client.revealHand(account as any, gameId, p2Hand as [number,number,number,number,number]);
+
+        // 6. Poll for Done
+        let phaseNum = await client.getGamePhase(gameId);
+        while (phaseNum < 5) {
+          await new Promise(r => setTimeout(r, 2000));
+          phaseNum = await client.getGamePhase(gameId);
+        }
+
+        // 7. Read result
+        const pot = await client.getPot(gameId);
+        const p1Hand = await client.getHand(gameId, p1Addr);
+        const oppDisplay = p1Hand ?? [];
+        const win = determineWinner(p2Hand, oppDisplay);
+        setState((s) => ({ ...s, phase: "done", pot,
+          winner: win, opponentHand: oppDisplay, proofStatus: null, error: null }));
+      } catch (e: any) { setError(e.message ?? "Showdown failed"); }
       return;
     }
 
@@ -376,46 +561,30 @@ export function usePokerGame() {
 
     try {
       setProof("partial_decrypt");
-      const [client, crypto] = await Promise.all([
-        getClient(),
-        import("../sdk-bridge"),
-      ]);
+      const [client, crypto] = await Promise.all([getClient(), import("../sdk-bridge")]);
 
-      // Recover P1 hand
       const p1Hand: number[] = [];
       for (const slot of P1_SLOTS) {
         const myPD  = await crypto.partialDecrypt(finalDeck[slot].c1, kp1.secretKey);
         const oppPD = await crypto.partialDecrypt(finalDeck[slot].c1, kp2.secretKey);
-        p1Hand.push(await crypto.recoverCard(finalDeck[slot], [myPD, oppPD]));
+        p1Hand.push(await crypto.recoverCard({ ...finalDeck[slot], r: 0n }, [myPD, oppPD]));
       }
-
-      // Recover P2 hand
       const p2Hand: number[] = [];
       for (const slot of P2_SLOTS) {
         const myPD  = await crypto.partialDecrypt(finalDeck[slot].c1, kp2.secretKey);
         const oppPD = await crypto.partialDecrypt(finalDeck[slot].c1, kp1.secretKey);
-        p2Hand.push(await crypto.recoverCard(finalDeck[slot], [myPD, oppPD]));
+        p2Hand.push(await crypto.recoverCard({ ...finalDeck[slot], r: 0n }, [myPD, oppPD]));
       }
 
       setState((s) => ({ ...s, hand: p1Hand, proofStatus: null }));
-
-      // Reveal both hands on-chain
-      await client.revealHand(account as any, gameId, p1Hand as [number, number, number, number, number]);
-      await client.revealHand(account as any, gameId, p2Hand as [number, number, number, number, number]);
+      await client.revealHand(account as any, gameId, p1Hand as [number,number,number,number,number]);
+      await client.revealHand(account as any, gameId, p2Hand as [number,number,number,number,number]);
 
       const pot = await client.getPot(gameId);
-      setState((s) => ({
-        ...s,
-        phase: "done",
-        pot,
-        winner: "you",
-        proofStatus: null,
-        error: null,
-      }));
-    } catch (e: any) {
-      setError(e.message ?? "Showdown failed");
-    }
-  }, [state.gameId, account, getClient]);
+      const win = determineWinner(p1Hand, p2Hand);
+      setState((s) => ({ ...s, phase: "done", pot, winner: win, opponentHand: p2Hand, proofStatus: null, error: null }));
+    } catch (e: any) { setError(e.message ?? "Showdown failed"); }
+  }, [state.gameId, state.role, account, address, getClient]);
 
   // ── Poll chain phase ──────────────────────────────────────────────────
 
