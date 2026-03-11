@@ -172,15 +172,15 @@ export default function LandingPage() {
 
         .tech-item {
           font-family: 'Courier New', Courier, monospace;
-          font-size: 9px;
-          letter-spacing: 0.2em;
-          color: rgba(240, 237, 232, 0.28);
+          font-size: 12px;
+          letter-spacing: 0.15em;
+          color: rgba(240, 237, 232, 0.55);
           text-transform: uppercase;
         }
 
         .tech-sep {
-          color: rgba(201, 168, 76, 0.25);
-          font-size: 9px;
+          color: rgba(201, 168, 76, 0.45);
+          font-size: 12px;
         }
 
         /* ── Footer ────────────────────────────────── */
@@ -188,9 +188,9 @@ export default function LandingPage() {
           position: absolute;
           bottom: 22px;
           font-family: 'Courier New', Courier, monospace;
-          font-size: 9px;
-          letter-spacing: 0.2em;
-          color: rgba(240, 237, 232, 0.16);
+          font-size: 11px;
+          letter-spacing: 0.18em;
+          color: rgba(240, 237, 232, 0.35);
           text-transform: uppercase;
           text-align: center;
           width: 100%;
