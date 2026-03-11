@@ -38,9 +38,20 @@ export function Lobby({ onCreateGame, onJoinGame, onResumeGame, gameId, error, i
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col relative overflow-hidden" style={{ background: "#090f0a" }}>
+      {/* Grid background */}
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        backgroundImage: "linear-gradient(rgba(201,168,76,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(201,168,76,0.04) 1px, transparent 1px)",
+        backgroundSize: "48px 48px",
+      }} />
+      {/* Vignette */}
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        background: "radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.65) 100%)",
+      }} />
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-green-900">
+      <header className="relative z-10 flex items-center justify-between px-6 py-4 border-b border-green-900/60">
         <div>
           <h1 className="text-2xl font-bold text-yellow-400 tracking-wide">♠ StarkPoker</h1>
           <p className="text-xs text-gray-400">Trustless Mental Poker on Starknet</p>
@@ -49,7 +60,7 @@ export function Lobby({ onCreateGame, onJoinGame, onResumeGame, gameId, error, i
       </header>
 
       {/* Hero */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 gap-10">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 gap-10">
         <div className="text-center max-w-lg">
           <h2 className="text-4xl font-bold text-white mb-3">
             Deal cards.<br />
@@ -153,7 +164,7 @@ export function Lobby({ onCreateGame, onJoinGame, onResumeGame, gameId, error, i
       </main>
 
       {/* Footer */}
-      <footer className="text-center py-4 text-xs text-gray-600">
+      <footer className="relative z-10 text-center py-4 text-xs text-gray-600">
         babyjubjub-starknet · Groth16 ZK · Barnett-Smart protocol
       </footer>
     </div>

@@ -87,9 +87,20 @@ export function GameTable({
   const isLoading = !!proofStatus && proofStatus !== "done";
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#0f1f15]">
+    <div className="min-h-screen flex flex-col relative overflow-hidden" style={{ background: "#090f0a" }}>
+      {/* Grid background */}
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        backgroundImage: "linear-gradient(rgba(201,168,76,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(201,168,76,0.04) 1px, transparent 1px)",
+        backgroundSize: "48px 48px",
+      }} />
+      {/* Vignette */}
+      <div style={{
+        position: "absolute", inset: 0, pointerEvents: "none",
+        background: "radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.65) 100%)",
+      }} />
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-green-900/60">
+      <header className="relative z-10 flex items-center justify-between px-6 py-3 border-b border-green-900/60">
         <div>
           <h1 className="text-xl font-bold text-yellow-400">♠ StarkPoker</h1>
           <p className="text-xs text-gray-500 font-mono">{shortAddr(address)}</p>
@@ -100,7 +111,7 @@ export function GameTable({
         </div>
       </header>
 
-      <main className="flex-1 flex flex-col items-center justify-center gap-6 px-4 py-6">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center gap-6 px-4 py-6">
         {/* Phase pill */}
         <div className="px-4 py-1.5 rounded-full bg-green-900/50 border border-green-700/60 text-sm text-green-300">
           {phaseLabel[phase]}
